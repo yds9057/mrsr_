@@ -274,39 +274,39 @@ fs.readFile('./workflow1.json', 'utf8', function(err, json) {
     console.log('----------wf1----------');
     wf1 = preProcess(json);
     wf1Start = getStartInstance(wf1);
-    deadline = 400;
-    budget = 20000;
+    deadline = 1000;
+    budget = 25000;
     startTime = 0;
     gainlossInfo = gainAlgorithm(wf1, wf1Start, budget);
-    MRSR(wf1, wf1Start, gainlossInfo[0], gainlossInfo[1], startTime, deadline);
+    MRSR(wf1, wf1Start, gainlossInfo[0], gainlossInfo[1], startTime, deadline, budget);
     gainlossInfo = lossAlgorithm(wf1, wf1Start, budget);
-    MRSR(wf1, wf1Start, gainlossInfo[0], gainlossInfo[1], startTime, deadline);
+    MRSR(wf1, wf1Start, gainlossInfo[0], gainlossInfo[1], startTime, deadline, budget);
 });
 
 fs.readFile('./workflow2.json', 'utf8', function(err, json) {
     console.log('----------wf2----------');
     wf2 = preProcess(json);
     wf2Start = getStartInstance(wf2);
-    deadline = 658;
+    deadline = 700;
     budget = 45000;
     startTime = 0;
     gainlossInfo = gainAlgorithm(wf2, wf2Start, budget);
-    MRSR(wf2, wf2Start, gainlossInfo[0], gainlossInfo[1], startTime, deadline);
+    MRSR(wf2, wf2Start, gainlossInfo[0], gainlossInfo[1], startTime, deadline, budget);
     gainlossInfo = lossAlgorithm(wf2, wf2Start, budget);
-    MRSR(wf2, wf2Start, gainlossInfo[0], gainlossInfo[1], startTime, deadline);
+    MRSR(wf2, wf2Start, gainlossInfo[0], gainlossInfo[1], startTime, deadline, budget);
 });
 
 fs.readFile('./workflow3.json', 'utf8', function(err, json) {
     console.log('----------wf3----------');
     wf3 = preProcess(json);
     wf3Start = getStartInstance(wf3);
-    deadline = 855;
-    budget = 50000;
+    deadline = 670;
+    budget = 40000;
     startTime = 0;
     gainlossInfo = gainAlgorithm(wf3, wf3Start, budget);
-    MRSR(wf3, wf3Start, gainlossInfo[0], gainlossInfo[1], startTime, deadline);
+    MRSR(wf3, wf3Start, gainlossInfo[0], gainlossInfo[1], startTime, deadline, budget);
     gainlossInfo = lossAlgorithm(wf3, wf3Start, budget);
-    MRSR(wf3, wf3Start, gainlossInfo[0], gainlossInfo[1], startTime, deadline);
+    MRSR(wf3, wf3Start, gainlossInfo[0], gainlossInfo[1], startTime, deadline, budget);
 });
 
 
@@ -650,7 +650,7 @@ function lossAlgorithm(workflow, startInstance, budget) {
     }
 }
 
-function MRSR(workflow, startInstance, execTime, cost, startTime, deadline) {
+function MRSR(workflow, startInstance, execTime, cost, startTime, deadline, budget) {
     if (execTime >= deadline) {
         console.log('MRSRExecTime: '+execTime);
         console.log('MRSRTotalCost: '+cost);
@@ -693,22 +693,35 @@ function MRSR(workflow, startInstance, execTime, cost, startTime, deadline) {
                 else
                     tempOverlapped = workflow.serviceInstances[index2].endTime - workflow.serviceInstances[index].startTime;
 
-                for (var index3 in workflow.serviceInstances) {
-                    if (workflow.serviceInstances[index3].merged == null)
-                        workflow.serviceInstances[index3].executionTime = profileTable[workflow.serviceInstances[index3].name][workflow.serviceInstances[index3].VMtype];
-                }
                 workflow.serviceInstances[index].executionTime = ((tempOverlapped / workflow.serviceInstances[index].executionTime) * profileTable[mergedName][workflow.serviceInstances[index].name][workflow.serviceInstances[index2].VMtype]) + (workflow.serviceInstances[index].executionTime - tempOverlapped);
                 workflow.serviceInstances[index2].executionTime = ((tempOverlapped / workflow.serviceInstances[index2].executionTime) * profileTable[mergedName][workflow.serviceInstances[index2].name][workflow.serviceInstances[index2].VMtype]) + (workflow.serviceInstances[index2].executionTime - tempOverlapped);
 
+                for (var index3 in workflow.serviceInstances) {
+                    workflow.serviceInstances[index3].visited = false;
+                }
+
                 var totalPathSet = [];
-                calcCost(null, startInstance, workflow, totalPathSet, [startInstance]);
+
+                var tempVMtype = workflow.serviceInstances[index].VMtype;
+                workflow.serviceInstances[index].VMtype = workflow.serviceInstances[index2].VMtype;
+                calcCost(null, startInstance, workflow, totalPathSet, [startInstance], true);
+                workflow.serviceInstances[index].VMtype = tempVMtype;
+
+                workflow.cost = workflow.tempCost;
+                workflow.tempCost = 0;
+
+                if ((profileTable[workflow.serviceInstances[index].name][workflow.serviceInstances[index].VMtype] + profileTable[workflow.serviceInstances[index2].name][workflow.serviceInstances[index2].VMtype])
+                    < (Math.max(workflow.serviceInstances[index].startTime + workflow.serviceInstances[index].executionTime, workflow.serviceInstances[index2].startTime + workflow.serviceInstances[index2].executionTime) - workflow.serviceInstances[index2].startTime)
+                    || workflow.cost > cost) {
+                    workflow.serviceInstances[index].executionTime = profileTable[workflow.serviceInstances[index].name][workflow.serviceInstances[index].VMtype];
+                    workflow.serviceInstances[index2].executionTime = profileTable[workflow.serviceInstances[index2].name][workflow.serviceInstances[index2].VMtype];
+
+                    continue;   // 합치기 전 각자의 시간을 더한 값보다 합친 후의 시간이 더 클 경우, 혹은 합친 후의 총 비용이 MRSR 이전의 총 비용보다 클 경우, 후보에서 탈락
+                }
+
                 if (calcTime(totalPathSet, true) <= deadline && tempOverlapped > maxOverlapped) {
                     for (var index4 in workflow.serviceInstances) {
                         workflow.serviceInstances[index4].mergeCandidate = false;
-
-                        if (workflow.serviceInstances[index4].merged == null)
-                            workflow.serviceInstances[index4].executionTime = profileTable[workflow.serviceInstances[index4].name][workflow.serviceInstances[index4].VMtype];
-                        }
                     }
 
                     workflow.serviceInstances[index2].mergeCandidate = true;
@@ -717,10 +730,9 @@ function MRSR(workflow, startInstance, execTime, cost, startTime, deadline) {
                     maxOverlapped = tempOverlapped;
                     takenMergedName = mergedName;
                 }
-                else {
-                    workflow.serviceInstances[index].executionTime = profileTable[workflow.serviceInstances[index].name][workflow.serviceInstances[index].VMtype];
-                    workflow.serviceInstances[index2].executionTime = profileTable[workflow.serviceInstances[index2].name][workflow.serviceInstances[index2].VMtype];
-                }
+
+                workflow.serviceInstances[index].executionTime = profileTable[workflow.serviceInstances[index].name][workflow.serviceInstances[index].VMtype];
+                workflow.serviceInstances[index2].executionTime = profileTable[workflow.serviceInstances[index2].name][workflow.serviceInstances[index2].VMtype];
             }
         }
 
@@ -732,9 +744,12 @@ function MRSR(workflow, startInstance, execTime, cost, startTime, deadline) {
                 workflow.serviceInstances[index3].executionTime = workflow.serviceInstances[index3].mergedExecutionTime;
                 workflow.serviceInstances[index].executionTime = workflow.serviceInstances[index].mergedExecutionTime;
                 workflow.serviceInstances[index].VMtype = workflow.serviceInstances[index3].VMtype;
+
+                console.error('Merging Occured~~');
             }
-            else if (workflow.serviceInstances[index3].merged == null)
+            else if (workflow.serviceInstances[index3].merged == null){
                 workflow.serviceInstances[index3].executionTime = profileTable[workflow.serviceInstances[index3].name][workflow.serviceInstances[index3].VMtype];
+            }
         }
     }
 
@@ -769,7 +784,7 @@ function getTaskTime (node, workflow, startTime) {
     }
 }
 
-function calcCost(VMtype, node, workflow, totalPathSet, pathSet) {
+function calcCost(VMtype, node, workflow, totalPathSet, pathSet, gotExecTime) {
     if (node.visited == false) {
         if (!node.VMtype) {
             node.VMtype = VMtype;
@@ -777,7 +792,7 @@ function calcCost(VMtype, node, workflow, totalPathSet, pathSet) {
         //console.log(node.name + ': ' + node.VMtype);
         //workflow.time += profileTable[node.name][node.VMtype];
 
-        if (node.merged != null)
+        if (gotExecTime != null || node.merged != null)
             workflow.tempCost += (VMcost[node.VMtype] * node.executionTime);
         else
             workflow.tempCost += (VMcost[node.VMtype] * profileTable[node.name][node.VMtype]);
@@ -792,7 +807,7 @@ function calcCost(VMtype, node, workflow, totalPathSet, pathSet) {
 
     for (var index in node.next) {
         pathSet.push(node.next[index]);
-        calcCost(VMtype, node.next[index], workflow, totalPathSet, pathSet);
+        calcCost(VMtype, node.next[index], workflow, totalPathSet, pathSet, gotExecTime);
         pathSet.pop();
     }
 }
@@ -802,7 +817,7 @@ function calcTime(totalPathSet, gotExecTime) {
     for (var index in totalPathSet) {
         var time = 0;
         for (var index2 in totalPathSet[index]) {
-            if (gotExecTime != true)
+            if (gotExecTime == null)
                 time += profileTable[totalPathSet[index][index2].name][totalPathSet[index][index2].VMtype];
             else
                 time += totalPathSet[index][index2].executionTime;
