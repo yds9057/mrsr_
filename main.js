@@ -274,8 +274,8 @@ fs.readFile('./workflow1.json', 'utf8', function(err, json) {
     console.log('----------wf1----------');
     wf1 = preProcess(json);
     wf1Start = getStartInstance(wf1);
-    deadline = 1000;
-    budget = 25000;
+    deadline = 500;
+    budget = 20000;
     startTime = 0;
     gainlossInfo = gainAlgorithm(wf1, wf1Start, budget);
     MRSR(wf1, wf1Start, gainlossInfo[0], gainlossInfo[1], startTime, deadline, budget);
@@ -300,7 +300,7 @@ fs.readFile('./workflow3.json', 'utf8', function(err, json) {
     console.log('----------wf3----------');
     wf3 = preProcess(json);
     wf3Start = getStartInstance(wf3);
-    deadline = 670;
+    deadline = 1000;
     budget = 40000;
     startTime = 0;
     gainlossInfo = gainAlgorithm(wf3, wf3Start, budget);
@@ -700,6 +700,8 @@ function MRSR(workflow, startInstance, execTime, cost, startTime, deadline, budg
                     workflow.serviceInstances[index3].visited = false;
                 }
 
+                workflow.serviceInstances[index2].totalMergedTime = Math.max(workflow.serviceInstances[index].startTime + workflow.serviceInstances[index].executionTime, workflow.serviceInstances[index2].startTime + workflow.serviceInstances[index2].executionTime) - workflow.serviceInstances[index2].startTime;
+                workflow.serviceInstances[index].totalMergedTime = 0;
                 var totalPathSet = [];
 
                 var tempVMtype = workflow.serviceInstances[index].VMtype;
@@ -711,10 +713,13 @@ function MRSR(workflow, startInstance, execTime, cost, startTime, deadline, budg
                 workflow.tempCost = 0;
 
                 if ((profileTable[workflow.serviceInstances[index].name][workflow.serviceInstances[index].VMtype] + profileTable[workflow.serviceInstances[index2].name][workflow.serviceInstances[index2].VMtype])
-                    < (Math.max(workflow.serviceInstances[index].startTime + workflow.serviceInstances[index].executionTime, workflow.serviceInstances[index2].startTime + workflow.serviceInstances[index2].executionTime) - workflow.serviceInstances[index2].startTime)
+                    < workflow.serviceInstances[index2].totalMergedTime
                     || workflow.cost > cost) {
                     workflow.serviceInstances[index].executionTime = profileTable[workflow.serviceInstances[index].name][workflow.serviceInstances[index].VMtype];
                     workflow.serviceInstances[index2].executionTime = profileTable[workflow.serviceInstances[index2].name][workflow.serviceInstances[index2].VMtype];
+
+                    workflow.serviceInstances[index].totalMergedTime = null;
+                    workflow.serviceInstances[index2].totalMergedTime = null;
 
                     continue;   // 합치기 전 각자의 시간을 더한 값보다 합친 후의 시간이 더 클 경우, 혹은 합친 후의 총 비용이 MRSR 이전의 총 비용보다 클 경우, 후보에서 탈락
                 }
@@ -727,6 +732,8 @@ function MRSR(workflow, startInstance, execTime, cost, startTime, deadline, budg
                     workflow.serviceInstances[index2].mergeCandidate = true;
                     workflow.serviceInstances[index2].mergedExecutionTime = workflow.serviceInstances[index2].executionTime;
                     workflow.serviceInstances[index].mergedExecutionTime = workflow.serviceInstances[index].executionTime;
+                    workflow.serviceInstances[index2].takenTotalMergedTime = workflow.serviceInstances[index2].totalMergedTime;
+                    workflow.serviceInstances[index].takenTotalMergedTime = workflow.serviceInstances[index].totalMergedTime;
                     maxOverlapped = tempOverlapped;
                     takenMergedName = mergedName;
                 }
@@ -743,12 +750,15 @@ function MRSR(workflow, startInstance, execTime, cost, startTime, deadline, budg
                 workflow.serviceInstances[index].merged = takenMergedName;
                 workflow.serviceInstances[index3].executionTime = workflow.serviceInstances[index3].mergedExecutionTime;
                 workflow.serviceInstances[index].executionTime = workflow.serviceInstances[index].mergedExecutionTime;
+                workflow.serviceInstances[index3].totalMergedTime = workflow.serviceInstances[index3].takenTotalMergedTime;
+                workflow.serviceInstances[index].totalMergedTime = workflow.serviceInstances[index].takenTotalMergedTime;
                 workflow.serviceInstances[index].VMtype = workflow.serviceInstances[index3].VMtype;
 
-                console.error('Merging Occured~~');
+                console.error('Merging Occurred~~');
             }
             else if (workflow.serviceInstances[index3].merged == null){
                 workflow.serviceInstances[index3].executionTime = profileTable[workflow.serviceInstances[index3].name][workflow.serviceInstances[index3].VMtype];
+                workflow.serviceInstances[index3].totalMergedTime = null;
             }
         }
     }
@@ -792,10 +802,17 @@ function calcCost(VMtype, node, workflow, totalPathSet, pathSet, gotExecTime) {
         //console.log(node.name + ': ' + node.VMtype);
         //workflow.time += profileTable[node.name][node.VMtype];
 
-        if (gotExecTime != null || node.merged != null)
-            workflow.tempCost += (VMcost[node.VMtype] * node.executionTime);
-        else
+        if (gotExecTime != null || node.merged != null) {
+            if (node.totalMergedTime != null) {
+                workflow.tempCost += (VMcost[node.VMtype] * node.totalMergedTime);
+            }
+            else
+                workflow.tempCost += (VMcost[node.VMtype] * node.executionTime);
+        }
+        else {
             workflow.tempCost += (VMcost[node.VMtype] * profileTable[node.name][node.VMtype]);
+        }
+
 
         node.visited = true;
     }
